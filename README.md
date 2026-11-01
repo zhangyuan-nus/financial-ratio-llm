@@ -1,263 +1,172 @@
-# Financial Ratio LLM System
+# Financial Ratio LLM
 
-A tool-augmented LLM system that generates Sharpe, Sortino, and Treynor ratios for any financial instrument with natural language explanations.
+[![CI](https://github.com/zhangyuan-nus/financial-ratio-llm/actions/workflows/ci.yml/badge.svg)](https://github.com/zhangyuan-nus/financial-ratio-llm/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-## Features
+Ask about risk-adjusted performance in plain English, for example *"How has a 60/40 Apple and
+Microsoft portfolio done over the last two years?"*, and get Sharpe, Sortino and Treynor ratios
+computed from real market data, explained by a local LLM.
 
-- **Natural Language Processing**: Parse user prompts to understand what financial ratios to calculate
-- **Real-time Data Fetching**: Automatically fetch financial data from various sources
-- **Ratio Calculations**: Compute Sharpe, Sortino, and Treynor ratios
-- **Natural Language Explanations**: Generate human-readable explanations of the results
+The LLM never does the maths. It turns the question into a validated request, and later turns
+the computed results into prose. Every number in the output comes from a deterministic,
+unit-tested pandas engine, and that engine can also be run directly without the LLM.
 
-## Architecture
+## Example
 
+```console
+$ finratio analyze AAPL MSFT --weights 60 40 --period 2y
+Portfolio: 60% AAPL, 40% MSFT
+Period: 2y (2024-11-01 to 2026-10-30, 500 trading days)
+Benchmark: ^GSPC | Risk-free rate: 5.00%
+
+                   Sharpe  Sortino  Treynor  Beta   CAGR  Volatility  Max DD
+Portfolio            0.75     1.13    17.0%  1.03  21.8%       23.4%  -27.8%
+  AAPL               0.72     1.07    19.4%  1.07  24.2%       28.7%  -33.4%
+  MSFT               0.43     0.68    13.0%  0.96  14.3%       28.8%  -34.5%
+^GSPC (benchmark)    0.66     0.96    10.6%  1.00  15.4%       16.1%  -18.9%
+
+Ratios and returns are annualized. Treynor = excess return per unit of beta.
 ```
-User Prompt → LLM Parser → Data Fetcher → Ratio Calculator → Natural Language Response
+
+The portfolio's volatility and drawdown are lower than either holding's, which lifts its Sharpe
+ratio above both of them: diversification at work. Asking the same thing in plain English,
+`finratio ask "Analyze my portfolio of 60% AAPL and 40% MSFT over 2 years"`, produces this table
+followed by a written explanation of what the numbers mean.
+
+## How it works
+
+```mermaid
+flowchart LR
+    Q([Plain-English question]) --> P[LLM fills a JSON schema]
+    P --> R[Validated request]
+    C([finratio analyze]) --> R
+    R --> F[Fetch daily prices concurrently]
+    F --> E[Ratio engine]
+    E --> T[Metrics table]
+    E --> X[LLM explains the computed numbers]
 ```
 
-## Setup
+- **Structured output, not free text.** The parsing step sends Ollama a JSON schema generated
+  from a Pydantic model, so the model can only answer with the expected fields. The answer is
+  validated again and normalized (tickers upper-cased, weights rescaled, defaults applied)
+  before any data is fetched.
+- **A deterministic core.** `ratios.py` is a set of pure functions over pandas Series. Tests
+  check each formula against a hand calculation, including edge cases such as zero volatility
+  and assets whose trading histories don't line up.
+- **A resilient data layer.** Prices for every ticker and the benchmark are fetched concurrently
+  with `asyncio` and `httpx`, with a concurrency limit and exponential-backoff retries on rate
+  limits and server errors. Timestamps are converted to each exchange's time zone, so series
+  from different markets line up by trading date.
+- **Grounded explanations.** The LLM receives the same rounded figures shown in the table and
+  is instructed to use only those numbers. If it is unavailable, the table is still printed.
 
-### Option 1: Free Local LLM (Recommended)
+## Methodology
 
-#### Step 1: Install Ollama
-- **Windows**: Download from https://ollama.com/download and run the installer
-- **Mac**: `brew install ollama` or download from https://ollama.com/download
-- **Linux**: `curl -fsSL https://ollama.com/install.sh | sh`
+Metrics use daily simple returns of adjusted closing prices, so dividends and splits are
+included, and are annualized with 252 trading days. With mean daily return $\bar r$, sample
+standard deviation $\sigma$, annual risk-free rate $r_f$ and $N$ daily returns:
 
-#### Step 2: Download a Model
-Choose based on your hardware:
+| Metric | Definition |
+| --- | --- |
+| Sharpe | $\dfrac{252\,\bar r - r_f}{\sqrt{252}\,\sigma}$ |
+| Sortino | $\dfrac{252\,\bar r - r_f}{\sqrt{252}\,\mathrm{DD}}$ where $\mathrm{DD} = \sqrt{\tfrac{1}{N}\sum_{t=1}^{N} \min\left(0,\, r_t - \tfrac{r_f}{252}\right)^2}$ |
+| Treynor | $\dfrac{252\,\bar r - r_f}{\beta}$ where $\beta = \dfrac{\mathrm{Cov}(r, r_m)}{\mathrm{Var}(r_m)}$ |
+| CAGR | $\left(\prod_{t=1}^{N} (1 + r_t)\right)^{252/N} - 1$ |
+| Max drawdown | Largest peak-to-trough fall in cumulative value |
 
-**Best Quality: Llama 3.3 70B** (48GB+ RAM required)
+- Downside deviation averages squared shortfalls over **all** $N$ days, not only the losing
+  days. Dividing by the number of losing days is a common mistake that overstates downside risk
+  and understates the Sortino ratio.
+- Beta is estimated over the dates on which both the asset and the benchmark traded.
+- Portfolios are rebalanced to their target weights every day, and weights are rescaled to sum
+  to 100%.
+- The benchmark has a beta of 1 by definition, so its Treynor ratio equals the market's excess
+  return. A holding with a higher Treynor ratio earned more excess return per unit of market
+  risk.
+
+## Getting started
+
+You need Python 3.11 or newer, a [RapidAPI key](https://rapidapi.com/apidojo/api/yahoo-finance1)
+for the Yahoo Finance API, and [Ollama](https://ollama.com) for the natural-language commands.
+
 ```bash
-ollama pull llama3.3:70b
+git clone https://github.com/zhangyuan-nus/financial-ratio-llm.git
+cd financial-ratio-llm
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -e .
+cp .env.example .env             # then add your RAPIDAPI_KEY
+ollama pull llama3.1:8b          # only needed for ask and chat
 ```
-
-**Good Balance: Llama 3.1 8B** (8GB+ RAM required)
-```bash
-ollama pull llama3.1:8b
-```
-
-**Fastest: Mistral 7B** (4GB+ RAM required)
-```bash
-ollama pull mistral:7b
-```
-
-#### Step 3: Install Dependencies
-```bash
-pip install -r requirements.txt
-```
-
-#### Step 4: Create `.env` file
-```bash
-# Ollama Configuration (No API key needed!)
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.1:8b
-
-# Data Source Configuration
-DATA_SOURCE=rapidapi
-RAPIDAPI_KEY=your_rapidapi_key_here
-
-# Financial Configuration
-RISK_FREE_RATE=0.05
-DEFAULT_BENCHMARK=^GSPC
-DEFAULT_PERIOD=1y
-TRADING_DAYS_PER_YEAR=252
-```
-
-#### Step 5: Start Ollama Server
-```bash
-# Start Ollama (runs in background)
-ollama serve
-```
-*Note: On Windows/Mac, Ollama usually starts automatically after installation.*
-
-#### Step 6: Test Your Setup
-```bash
-# Test Ollama directly
-ollama run llama3.1:8b "What is the Sharpe ratio?"
-
-# Test the financial system
-python main.py --query "Calculate Sharpe ratio for AAPL"
-```
-
-### Option 2: OpenAI API (Paid)
-
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. Create a `.env` file in the project root:
-   ```bash
-   OPENAI_API_KEY=your_openai_api_key_here
-   RISK_FREE_RATE=0.05
-   DEFAULT_BENCHMARK=^GSPC
-   DEFAULT_PERIOD=1y
-   OPENAI_MODEL=gpt-4
-   ```
-
-## Analysis Types
-
-The system supports three main types of financial analysis:
-
-### 🔍 **Single Stock Analysis**
-Analyze individual stocks with comprehensive ratio calculations and interpretations.
-- **Example**: "Calculate all ratios for AAPL"
-- **Output**: Sharpe, Sortino, Treynor ratios with detailed explanations
-
-### 📊 **Stock Comparison**
-Compare multiple stocks side-by-side to identify the best performers.
-- **Example**: "Compare Sharpe ratios between AAPL and MSFT"
-- **Output**: Individual analysis of each stock + comparative insights
-
-### 💼 **Portfolio Analysis**
-Analyze weighted portfolios with both portfolio-level and individual stock metrics.
-- **Example**: "Analyze my portfolio of 60% AAPL and 40% MSFT"
-- **Output**: Portfolio ratios + individual stock analysis + rebalancing insights
 
 ## Usage
 
-### Interactive Mode
 ```bash
-python main.py
-```
-Then ask questions like:
+# Direct mode, no LLM needed
+finratio analyze NVDA                                    # one stock against the S&P 500
+finratio analyze AAPL MSFT GOOGL --period 5y             # side-by-side comparison
+finratio analyze AAPL MSFT --weights 60 40               # a 60/40 portfolio
+finratio analyze D05.SI O39.SI U11.SI --benchmark ^STI   # Singapore banks against the STI
 
-**Single Stock Analysis:**
-- "Calculate the Sharpe ratio for AAPL"
-- "What are all the ratios for Tesla stock?"
-- "Analyze NVDA's risk-adjusted performance"
-
-**Stock Comparison:**
-- "Compare Sharpe ratios between AAPL and MSFT"
-- "What are the ratios for AAPL and TSLA?"
-- "Compare the risk-adjusted performance of SPY vs QQQ"
-
-**Portfolio Analysis:**
-- "Analyze my portfolio of 60% AAPL and 40% MSFT"
-- "Calculate ratios for my 70% SPY, 30% QQQ portfolio"
-- "What's the Sharpe ratio of my equal-weight portfolio with TSLA, MSFT, and GOOGL?"
-
-**Advanced Queries:**
-- "Compare Treynor ratios between tech stocks over 2 years"
-- "How does my 50-50 AAPL-MSFT portfolio perform against the market?"
-
-
-
-### Single Query Mode
-```bash
-# Single stock analysis
-python main.py --query "Calculate all ratios for AAPL"
-
-# Stock comparison
-python main.py --query "Compare Sharpe ratios of AAPL and MSFT"
-
-# Portfolio analysis
-python main.py --query "Analyze my portfolio of 60% AAPL and 40% MSFT"
+# Natural language, requires Ollama
+finratio ask "Compare the Sharpe ratios of SPY and QQQ over 5 years"
+finratio ask "How risky is my portfolio of 50% TSLA, 30% AAPL and 20% GLD this year?"
+finratio chat
 ```
 
-## Supported Ratios
+Supported periods are `1mo`, `3mo`, `6mo`, `ytd`, `1y`, `2y`, `5y` and `10y`. Any Yahoo Finance
+symbol works, including indices (`^GSPC`), ETFs (`SPY`) and SGX listings (`D05.SI`). Each
+analysis makes one API request per ticker, plus one for the benchmark.
 
-- **Sharpe Ratio**: Risk-adjusted return measure
-  - Formula: (Portfolio Return - Risk-free Rate) / Portfolio Standard Deviation
-  - Measures excess return per unit of total risk
-  
-- **Sortino Ratio**: Downside risk-adjusted return
-  - Formula: (Portfolio Return - Target Return) / Downside Deviation
-  - Focuses only on downside volatility, ignoring upside volatility
-  
-- **Treynor Ratio**: Systematic risk-adjusted return
-  - Formula: (Portfolio Return - Risk-free Rate) / Beta
-  - Measures excess return per unit of systematic risk
+## Configuration
 
-## Ollama Model Comparison
+Settings are read from environment variables or a `.env` file in the working directory.
 
-| Model | Quality | Speed | RAM Usage | Best For |
-|-------|---------|-------|-----------|----------|
-| Llama 3.3 70B | ⭐⭐⭐⭐⭐ | ⭐⭐ | 48GB+ | Best results |
-| Llama 3.1 8B | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | 8GB+ | Balanced |
-| Mistral 7B | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | 4GB+ | Speed |
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `RAPIDAPI_KEY` | required | Key for the Yahoo Finance API on RapidAPI |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Address of the Ollama server |
+| `OLLAMA_MODEL` | `llama3.1:8b` | Ollama model used to parse questions and write explanations |
+| `RISK_FREE_RATE` | `0.05` | Annual risk-free rate, as a decimal |
+| `DEFAULT_BENCHMARK` | `^GSPC` | Benchmark used for beta and the Treynor ratio |
+| `DEFAULT_PERIOD` | `1y` | Look-back period when none is given |
 
-## Troubleshooting
+## Project structure
 
-### "Connection refused" Error
-```bash
-# Make sure Ollama is running
-ollama serve
-
-# Check if it's running
-curl http://localhost:11434/api/tags
+```text
+src/finratio/
+├── cli.py           # analyze, ask and chat commands
+├── analyzer.py      # request validation and the analysis pipeline
+├── ratios.py        # Sharpe, Sortino, Treynor, beta, CAGR and drawdown
+├── portfolio.py     # weight normalization and portfolio returns
+├── market_data.py   # async RapidAPI client and response parsing
+├── llm.py           # Ollama: question to request, results to explanation
+├── report.py        # the table, and the summary passed to the LLM
+└── config.py        # settings from the environment
+tests/               # offline tests with a fake price source and a fake LLM
 ```
 
-### Model Not Found
-```bash
-# List available models
-ollama list
+## Development
 
-# Pull the model if missing
-ollama pull llama3.1:8b
+```bash
+pip install -e ".[dev]"
+pytest
+ruff check . && ruff format --check .
 ```
 
-### Out of Memory
-```bash
-# Switch to smaller model in your .env file
-OLLAMA_MODEL=mistral:7b
-```
+The tests need no network access or API keys. The market-data client is tested with
+`httpx.MockTransport` against a recorded API response, and the LLM layer against a fake Ollama
+client. CI runs the suite on Python 3.11 to 3.14.
 
-### Slow Performance
-- Use a smaller model (`mistral:7b`)
-- Close other applications
-- Ensure you have enough RAM
-- Consider using GPU acceleration if available
+## Limitations
 
-## Ollama vs OpenAI Comparison
+- The ratios describe past performance over the chosen window. They are not forecasts.
+- A constant risk-free rate is used rather than a historical Treasury bill series.
+- Annualization assumes 252 trading days, which does not suit assets that trade every day,
+  such as cryptocurrencies.
+- Portfolios are long-only, rebalanced daily, and ignore transaction costs and taxes.
 
-| Feature | Ollama (Free) | OpenAI (Paid) |
-|---------|---------------|---------------|
-| **Cost** | $0 forever | $0.01-0.05 per query |
-| **Privacy** | 100% local | Data sent to OpenAI |
-| **Internet** | Not required | Required |
-| **Setup** | One-time install | API key needed |
-| **Performance** | Good-Excellent | Excellent |
-| **Speed** | Depends on hardware | Fast |
+## License
 
-## Advanced Configuration
-
-### Custom Ollama Settings
-```bash
-# Set custom host/port
-export OLLAMA_HOST=0.0.0.0:11435
-
-# Use GPU acceleration (if available)
-export OLLAMA_GPU=1
-```
-
-### Multiple Models
-```bash
-# Download multiple models for different use cases
-ollama pull llama3.1:8b      # Balanced
-ollama pull mistral:7b       # Fast
-ollama pull codellama:7b     # Code-focused
-```
-
-## Features Summary
-
-✅ **Natural Language Processing**: Ask questions in plain English  
-✅ **Real-time Data**: Fetches live market data via RapidAPI (Yahoo Finance)  
-✅ **Three Analysis Types**: Single stocks, stock comparisons, and portfolio analysis  
-✅ **Smart Portfolio Handling**: Automatic equal weights or custom weight specifications  
-✅ **Stock Comparison**: Side-by-side analysis of multiple stocks  
-✅ **Multiple Time Periods**: Analyze over various time horizons (1d to 10y)  
-✅ **Custom Benchmarks**: Compare against different market indices  
-✅ **Command Line Interface**: Easy-to-use CLI for local analysis  
-✅ **Comprehensive Explanations**: AI-generated insights and interpretations  
-✅ **Free & Private**: Run completely locally with Ollama  
-✅ **No API Costs**: No recurring charges or usage limits  
-
-## Tips for Best Results
-
-1. **Start Small**: Begin with `mistral:7b` to test, then upgrade
-2. **Monitor Resources**: Use Task Manager/Activity Monitor to check RAM usage
-3. **Close Other Apps**: Free up RAM for better performance
-4. **Be Patient**: First run may be slower as model loads
-5. **Experiment**: Try different models to find your sweet spot
+[MIT](LICENSE). This project is for education and research, and is not investment advice.
