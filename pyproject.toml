@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "financial-ratio-llm"
+dynamic = ["version"]
+description = "Plain-English risk analysis for stocks and portfolios: a local LLM parses the question, a tested Python engine computes Sharpe, Sortino and Treynor ratios."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Zhang Yuan" }]
+keywords = ["finance", "llm", "ollama", "sharpe-ratio", "portfolio-analysis"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = [
+    "httpx>=0.27",
+    "numpy>=1.26",
+    "ollama>=0.4",
+    "pandas>=2.1",
+    "pydantic>=2.6",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+finratio = "finratio.cli:main"
+
+[tool.hatch.version]
+path = "src/finratio/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/finratio"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
