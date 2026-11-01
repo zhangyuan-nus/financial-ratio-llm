@@ -31,7 +31,7 @@ class AnalysisRequest:
 
     symbols: Sequence[str]
     period: str = "1y"
-    benchmark: str = "^GSPC"
+    benchmark: str = "SPY"
     risk_free_rate: float = 0.05
     weights: Mapping[str, float] | None = None
 

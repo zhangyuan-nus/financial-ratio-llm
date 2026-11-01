@@ -14,7 +14,7 @@ class Settings:
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b"
     risk_free_rate: float = 0.05
-    benchmark: str = "^GSPC"
+    benchmark: str = "SPY"
     period: str = "1y"
 
     @classmethod

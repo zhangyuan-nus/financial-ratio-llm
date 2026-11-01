@@ -18,13 +18,13 @@ unit-tested pandas engine, and that engine can also be run directly without the 
 $ finratio analyze AAPL MSFT --weights 60 40 --period 2y
 Portfolio: 60% AAPL, 40% MSFT
 Period: 2y (2024-11-01 to 2026-10-30, 500 trading days)
-Benchmark: ^GSPC | Risk-free rate: 5.00%
+Benchmark: SPY | Risk-free rate: 5.00%
 
-                   Sharpe  Sortino  Treynor  Beta   CAGR  Volatility  Max DD
-Portfolio            0.75     1.13    17.0%  1.03  21.8%       23.4%  -27.8%
-  AAPL               0.72     1.07    19.4%  1.07  24.2%       28.7%  -33.4%
-  MSFT               0.43     0.68    13.0%  0.96  14.3%       28.8%  -34.5%
-^GSPC (benchmark)    0.66     0.96    10.6%  1.00  15.4%       16.1%  -18.9%
+                 Sharpe  Sortino  Treynor  Beta   CAGR  Volatility  Max DD
+Portfolio          0.75     1.13    17.5%  1.00  21.8%       23.4%  -27.8%
+  AAPL             0.72     1.07    19.9%  1.04  24.2%       28.7%  -33.4%
+  MSFT             0.43     0.68    13.5%  0.93  14.3%       28.8%  -34.5%
+SPY (benchmark)    0.72     1.06    11.8%  1.00  16.7%       16.6%  -18.8%
 
 Ratios and returns are annualized. Treynor = excess return per unit of beta.
 ```
@@ -79,6 +79,8 @@ standard deviation $\sigma$, annual risk-free rate $r_f$ and $N$ daily returns:
   days. Dividing by the number of losing days is a common mistake that overstates downside risk
   and understates the Sortino ratio.
 - Beta is estimated over the dates on which both the asset and the benchmark traded.
+- The default benchmark is SPY, an S&P 500 ETF, rather than the `^GSPC` index. An index level
+  excludes dividends, while adjusted ETF prices include them, just like the holdings' prices.
 - Portfolios are rebalanced to their target weights every day, and weights are rescaled to sum
   to 100%.
 - The benchmark has a beta of 1 by definition, so its Treynor ratio equals the market's excess
@@ -104,10 +106,10 @@ ollama pull llama3.1:8b          # only needed for ask and chat
 
 ```bash
 # Direct mode, no LLM needed
-finratio analyze NVDA                                    # one stock against the S&P 500
-finratio analyze AAPL MSFT GOOGL --period 5y             # side-by-side comparison
-finratio analyze AAPL MSFT --weights 60 40               # a 60/40 portfolio
-finratio analyze D05.SI O39.SI U11.SI --benchmark ^STI   # Singapore banks against the STI
+finratio analyze NVDA                                      # one stock against SPY
+finratio analyze AAPL MSFT GOOGL --period 5y               # side-by-side comparison
+finratio analyze AAPL MSFT --weights 60 40                 # a 60/40 portfolio
+finratio analyze D05.SI O39.SI U11.SI --benchmark ES3.SI   # Singapore banks against an STI ETF
 
 # Natural language, requires Ollama
 finratio ask "Compare the Sharpe ratios of SPY and QQQ over 5 years"
@@ -129,7 +131,7 @@ Settings are read from environment variables or a `.env` file in the working dir
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Address of the Ollama server |
 | `OLLAMA_MODEL` | `llama3.1:8b` | Ollama model used to parse questions and write explanations |
 | `RISK_FREE_RATE` | `0.05` | Annual risk-free rate, as a decimal |
-| `DEFAULT_BENCHMARK` | `^GSPC` | Benchmark used for beta and the Treynor ratio |
+| `DEFAULT_BENCHMARK` | `SPY` | Benchmark used for beta and the Treynor ratio |
 | `DEFAULT_PERIOD` | `1y` | Look-back period when none is given |
 
 ## Project structure

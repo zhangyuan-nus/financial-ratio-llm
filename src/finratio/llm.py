@@ -29,9 +29,10 @@ Fill in the JSON schema:
   "60/40", "an equal-weight basket"); false for one security or a side-by-side comparison.
 - period: one of 1mo, 3mo, 6mo, ytd, 1y, 2y, 5y, 10y ("two years" -> 2y,
   "this year" -> ytd), or null if not stated.
-- benchmark: an index ticker only if the user names one (S&P 500 -> ^GSPC,
-  Nasdaq Composite -> ^IXIC, Dow Jones -> ^DJI, Straits Times Index -> ^STI), else null.
-  When the user compares a security with an index, the index is the benchmark, not a holding.
+- benchmark: only if the user names one, else null. Prefer ETFs, whose adjusted prices
+  include dividends: S&P 500 -> SPY, Nasdaq-100 -> QQQ, Dow Jones -> DIA,
+  Straits Times Index -> ES3.SI. When the user compares a security with an index, the
+  index is the benchmark, not a holding.
 - risk_free_rate_percent: only if the user states a risk-free rate ("assume 4%" -> 4),
   else null.
 """
