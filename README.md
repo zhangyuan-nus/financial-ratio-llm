@@ -37,14 +37,14 @@ followed by a written explanation of what the numbers mean.
 ## How it works
 
 ```mermaid
-flowchart LR
-    Q([Plain-English question]) --> P[LLM fills a JSON schema]
-    P --> R[Validated request]
-    C([finratio analyze]) --> R
-    R --> F[Fetch daily prices concurrently]
-    F --> E[Ratio engine]
-    E --> T[Metrics table]
-    E --> X[LLM explains the computed numbers]
+flowchart TD
+    Q(["finratio ask: a question in plain English"]) --> P["LLM fills a JSON schema"]
+    C(["finratio analyze: tickers and options"]) --> R
+    P --> R["Validated request"]
+    R --> F["Fetch daily prices concurrently"]
+    F --> E["Ratio engine"]
+    E --> T["Metrics table"]
+    E --> X["LLM explains the computed numbers"]
 ```
 
 - **Structured output, not free text.** The parsing step sends Ollama a JSON schema generated
@@ -64,14 +64,14 @@ flowchart LR
 ## Methodology
 
 Metrics use daily simple returns of adjusted closing prices, so dividends and splits are
-included, and are annualized with 252 trading days. With mean daily return $\bar r$, sample
+included, and are annualized with 252 trading days. With mean daily return $\bar{r}$, sample
 standard deviation $\sigma$, annual risk-free rate $r_f$ and $N$ daily returns:
 
 | Metric | Definition |
 | --- | --- |
-| Sharpe | $\dfrac{252\,\bar r - r_f}{\sqrt{252}\,\sigma}$ |
-| Sortino | $\dfrac{252\,\bar r - r_f}{\sqrt{252}\,\mathrm{DD}}$ where $\mathrm{DD} = \sqrt{\tfrac{1}{N}\sum_{t=1}^{N} \min\left(0,\, r_t - \tfrac{r_f}{252}\right)^2}$ |
-| Treynor | $\dfrac{252\,\bar r - r_f}{\beta}$ where $\beta = \dfrac{\mathrm{Cov}(r, r_m)}{\mathrm{Var}(r_m)}$ |
+| Sharpe | $\dfrac{252\bar{r} - r_f}{\sqrt{252}\sigma}$ |
+| Sortino | $\dfrac{252\bar{r} - r_f}{\sqrt{252}\mathrm{DD}}$ where $\mathrm{DD} = \sqrt{\tfrac{1}{N}\sum_{t=1}^{N} \min\left(0, r_t - \tfrac{r_f}{252}\right)^2}$ |
+| Treynor | $\dfrac{252\bar{r} - r_f}{\beta}$ where $\beta = \dfrac{\mathrm{Cov}(r, r_m)}{\mathrm{Var}(r_m)}$ |
 | CAGR | $\left(\prod_{t=1}^{N} (1 + r_t)\right)^{252/N} - 1$ |
 | Max drawdown | Largest peak-to-trough fall in cumulative value |
 
